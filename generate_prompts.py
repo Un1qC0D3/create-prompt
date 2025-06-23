@@ -52,11 +52,7 @@ def ask_llm(prompt: str, temperature: float = 0.7) -> str:
         messages=[
             {"role": "system", "content": "You are an expert SEO consultant."},
             {"role": "user",   "content": prompt},
-        ],
-        temperature=temperature,
-        top_p=0.95,
-        max_tokens=512,     # <-- burayı max_new_tokens yerine max_tokens yap
-        stream=False,
+        ]
     )
     choice = completion.choices[0]
     text = choice.message.get("content") or choice.message.get("generated_text")
