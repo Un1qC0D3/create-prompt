@@ -1,17 +1,4 @@
 #!/usr/bin/env python3
-"""
-Auto-generate prompt ideas and save them to outputs/ as JSON.
-
-Usage (locally or in GitHub Actions runner):
-    python generate_prompts.py
-
-Environment variables required (set as GitHub Secrets for Actions):
-    HF_TOKEN   – Hugging Face Inference API token with **read** scope
-
-Dependencies (see requirements.txt):
-    requests, pytrends
-"""
-
 from __future__ import annotations
 
 import datetime as dt
