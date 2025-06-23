@@ -8,15 +8,22 @@ import pathlib
 import random
 from typing import Dict, List
 
-import requests
+from huggingface_hub import InferenceApi
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
-HF_MODEL_URL = (
-    "https://api-inference.huggingface.co/models/tiiuae/falcon-7b-instruct"
-)
+# Model kimliğini resmen InferenceApi'ye ileteceğiz.
+HF_REPO_ID = "tiiuae/falcon-7b-instruct"
+# HF_TOKEN mutlaka read erişimine sahip olmalı
+HF_TOKEN = os.environ.get("HF_TOKEN")
+if not HF_TOKEN:
+    raise RuntimeError("HF_TOKEN environment variable is missing!")
+
+# InferenceApi istemcisini başlat
+inference = InferenceApi(repo_id=HF_REPO_ID, token=HF_TOKEN)  # :contentReference[oaicite:0]{index=0}
+
 MAX_KEYWORDS = 5
 OUTPUT_DIR = pathlib.Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -26,41 +33,28 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 # ---------------------------------------------------------------------------
 
 def ask_llm(prompt: str, temperature: float = 0.7) -> str:
-    """Send `prompt` to the Inference API and return generated text."""
-    token = os.environ.get("HF_TOKEN")
-    if not token:
-        raise RuntimeError(
-            "HF_TOKEN environment variable is missing – did you set it as a GitHub secret?"
-        )
-
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json",
-    }
-    payload: Dict = {
-        "inputs": prompt,
-        "parameters": {"temperature": temperature, "max_new_tokens": 512},
-    }
-
-    res = requests.post(HF_MODEL_URL, headers=headers, json=payload, timeout=60)
-    res.raise_for_status()
-    data = res.json()
-
-    # Güncel Hugging Face API çıktısını kontrol et
-    # 1. outputs -> liste ise
-    if isinstance(data, dict) and "outputs" in data and isinstance(data["outputs"], list):
-        return data["outputs"][0].strip()
-    # 2. generated_text -> direkt string ise
-    if isinstance(data, dict) and "generated_text" in data:
-        return data["generated_text"].strip()
-    # 3. eski format: liste ve ilk elemanında generated_text
-    if isinstance(data, list) and data and "generated_text" in data[0]:
-        return data[0]["generated_text"].strip()
-    # 4. hata
-    raise ValueError(f"Unexpected HF API response: {data}")
+    """
+    `inference` üzerinden prompt gönderir, dönen yanıtı çeker.
+    - prompt: string
+    - temperature: float
+    """
+    # Hugging Face API, OpenAI-benzeri parametreler alıyor
+    res = inference(
+        inputs=prompt,
+        parameters={"temperature": temperature, "max_new_tokens": 512},
+        # Eğer model gRPC yerine REST kullanıyorsa base_url ayarlanabilir
+    )
+    # Yanıt dict veya list olabilir; genelde dict["generated_text"]
+    if isinstance(res, dict) and "generated_text" in res:
+        return res["generated_text"].strip()
+    if isinstance(res, dict) and "outputs" in res:
+        return res["outputs"][0].strip()
+    if isinstance(res, list) and "generated_text" in res[0]:
+        return res[0]["generated_text"].strip()
+    raise ValueError(f"Unexpected HF response: {res}")
 
 def get_trending_keywords(n: int = MAX_KEYWORDS) -> List[str]:
-    """Fetch trending searches for Turkey via *pytrends*. Fallback to static list."""
+    """Pytrends ile Türkiye trendleri, hata olursa sabit liste döner."""
     try:
         from pytrends.request import TrendReq
         pt = TrendReq(hl="en-US", tz=180)
@@ -87,7 +81,7 @@ TEMPLATE = (
 )
 
 def build_prompt(keyword: str) -> Dict[str, str]:
-    """Return a dict with title + prompt text for a given keyword."""
+    """Her anahtar kelime için title + prompt metni hazırlar."""
     variables: Dict[str, str] = {
         "role": "Deneyimli SEO danışmanı",
         "task": "Anahtar kelimeye dayalı uzun biçimli blog yazısı planı üret",
@@ -96,41 +90,38 @@ def build_prompt(keyword: str) -> Dict[str, str]:
         "constraints": "Min 1500 kelime, İngilizce, emoji yok",
         "example": "Full guide for beginners",
     }
-    prompt_text = TEMPLATE.format(**variables)
-    return {
-        "title": f"Blog Plan Generator – {keyword}",
-        "prompt": prompt_text,
-    }
+    text = TEMPLATE.format(**variables)
+    return {"title": f"Blog Plan Generator – {keyword}", "prompt": text}
 
 # ---------------------------------------------------------------------------
-# Main routine
+# Main
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    """Entry-point when script is executed."""
     keywords = get_trending_keywords()
-    prompts: List[Dict[str, str]] = [build_prompt(kw) for kw in keywords]
+    prompts = [build_prompt(k) for k in keywords]
 
     kept: List[Dict[str, str]] = []
-    for item in prompts:
+    for itm in prompts:
         try:
-            sample = ask_llm(item["prompt"], temperature=0.3)
-            if len(sample.split()) >= 50 and "error" not in sample.lower():
-                item["sample"] = sample[:500] + "…"
-                kept.append(item)
-        except Exception as exc:
-            print("Prompt check failed:", exc)
+            out = ask_llm(itm["prompt"], temperature=0.3)
+            # Basit filtre: en az 50 kelime, error yok
+            if len(out.split()) >= 50 and "error" not in out.lower():
+                itm["sample"] = out[:500] + "…"
+                kept.append(itm)
+        except Exception as e:
+            print("Prompt check failed:", e)
 
     if not kept:
         print("No valid prompts generated. Exiting.")
         return
 
-    timestamp = dt.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    outfile = OUTPUT_DIR / f"prompts_{timestamp}.json"
-    with outfile.open("w", encoding="utf-8") as fp:
+    fn = f"prompts_{dt.datetime.utcnow():%Y%m%d_%H%M%S}.json"
+    outp = OUTPUT_DIR / fn
+    with outp.open("w", encoding="utf-8") as fp:
         json.dump(kept, fp, ensure_ascii=False, indent=2)
 
-    print(f"Saved {len(kept)} prompts → {outfile}")
+    print(f"Saved {len(kept)} prompts → {outp}")
 
 if __name__ == "__main__":
     main()
