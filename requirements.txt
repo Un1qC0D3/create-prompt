@@ -2,3 +2,4 @@ requests
 pytrends
 playwright==1.44.0
 html2image
+huggingface-hub
