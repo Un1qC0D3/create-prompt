@@ -45,7 +45,7 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 def ask_llm(prompt: str, temperature: float = 0.7) -> str:
     """
     `client.chat.completions.create(...)` ile prompt’u gönderir,
-    dönen chat cevabını ("assistant" mesajını) çıkarır.
+    dönen chat cevabını döndürür.
     """
     completion = CLIENT.chat.completions.create(
         model=HF_MODEL_ID,
@@ -55,14 +55,13 @@ def ask_llm(prompt: str, temperature: float = 0.7) -> str:
         ],
         temperature=temperature,
         top_p=0.95,
-        max_new_tokens=512,
+        max_tokens=512,     # <-- burayı max_new_tokens yerine max_tokens yap
         stream=False,
     )
-    # completion.choices listesindeki ilk öğenin mesajı alınıyor
     choice = completion.choices[0]
-    # Hugging Face mesaj objesinde "message" veya "content" olabilir
     text = choice.message.get("content") or choice.message.get("generated_text")
     return text.strip()
+
 
 def get_trending_keywords(n: int = MAX_KEYWORDS) -> List[str]:
     try:
