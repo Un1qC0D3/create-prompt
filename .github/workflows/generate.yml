@@ -1,0 +1,39 @@
+name: Generate Prompts
+
+on:
+  workflow_dispatch:          # Elle çalıştırma
+  schedule:
+    - cron: '0 4 * * *'       # Her gün 07:00 Türkiye saati
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate prompts
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python generate_prompts.py
+
+      - name: Commit outputs
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'actions@github.com'
+          if [ -d outputs ]; then
+            git add outputs/* || true
+          fi
+          git commit -m \"auto: add prompts $(date -u +'%Y-%m-%dT%H:%M:%SZ')\" || echo 'No new files'
+          git push || echo 'Nothing to push'
