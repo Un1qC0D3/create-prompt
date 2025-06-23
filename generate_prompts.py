@@ -2,8 +2,8 @@
 """
 Auto-generate prompt ideas and save them to outputs/ as JSON.
 
-Bu sürümde hiç dış kütüphane istemcisi (huggingface_hub vb.) 
-kullanmayıp, doğrudan REST API’ya post ediyoruz.
+Bu sürüm, Hugging Face’in resmi `huggingface_hub` paketindeki
+InferenceClient’in chat-completion API’sini kullanır.
 """
 
 from __future__ import annotations
@@ -15,24 +15,24 @@ import pathlib
 import random
 from typing import Dict, List
 
-import requests
+from huggingface_hub import InferenceClient
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
-# Model endpoint
-HF_API_URL = "https://api-inference.huggingface.co/models/tiiuae/falcon-7b-instruct"
-# Token’ı GH Secrets olarak eklediğin HF_TOKEN’dan al
+# Model ve provider bilgisi
+HF_MODEL_ID = "meta-llama/Llama-3.1-8B-Instruct"
+# Erişim token’ını GH Secret olarak ayarlamalısın
 HF_TOKEN = os.environ.get("HF_TOKEN")
 if not HF_TOKEN:
     raise RuntimeError("HF_TOKEN environment variable is missing!")
 
-# Başlıklar
-HEADERS = {
-    "Authorization": f"Bearer {HF_TOKEN}",
-    "Content-Type": "application/json",
-}
+# İstendiğinde provider seçebilirsin (örneğin fireworks-ai):
+CLIENT = InferenceClient(
+    token=HF_TOKEN,
+    provider="fireworks-ai"  # Dokümandaki örnek için
+)
 
 MAX_KEYWORDS = 5
 OUTPUT_DIR = pathlib.Path("outputs")
@@ -44,38 +44,27 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 def ask_llm(prompt: str, temperature: float = 0.7) -> str:
     """
-    Doğrudan REST API çağrısı yapar ve dönen metni alır.
+    `client.chat.completions.create(...)` ile prompt’u gönderir,
+    dönen chat cevabını ("assistant" mesajını) çıkarır.
     """
-    payload = {
-        "inputs": prompt,
-        "parameters": {
-            "temperature": temperature,
-            "max_new_tokens": 512
-        },
-        # bazen cache yüzünden eski dönüş yoksa:
-        "options": {"use_cache": False}
-    }
-    resp = requests.post(HF_API_URL, headers=HEADERS, json=payload, timeout=60)
-    resp.raise_for_status()
-    data = resp.json()
-
-    # Çıktı birkaç farklı formatta olabilir:
-    # 1) { "generated_text": "..." }
-    if isinstance(data, dict) and "generated_text" in data:
-        return data["generated_text"].strip()
-
-    # 2) [ { "generated_text": "..." } ]
-    if isinstance(data, list) and data and "generated_text" in data[0]:
-        return data[0]["generated_text"].strip()
-
-    # 3) { "outputs": ["..."] }
-    if isinstance(data, dict) and "outputs" in data and isinstance(data["outputs"], list):
-        return data["outputs"][0].strip()
-
-    raise ValueError(f"Unexpected HF response format: {data}")
+    completion = CLIENT.chat.completions.create(
+        model=HF_MODEL_ID,
+        messages=[
+            {"role": "system", "content": "You are an expert SEO consultant."},
+            {"role": "user",   "content": prompt},
+        ],
+        temperature=temperature,
+        top_p=0.95,
+        max_new_tokens=512,
+        stream=False,
+    )
+    # completion.choices listesindeki ilk öğenin mesajı alınıyor
+    choice = completion.choices[0]
+    # Hugging Face mesaj objesinde "message" veya "content" olabilir
+    text = choice.message.get("content") or choice.message.get("generated_text")
+    return text.strip()
 
 def get_trending_keywords(n: int = MAX_KEYWORDS) -> List[str]:
-    """Pytrends ile Türkiye trendleri, hata olursa sabit liste döner."""
     try:
         from pytrends.request import TrendReq
         pt = TrendReq(hl="en-US", tz=180)
