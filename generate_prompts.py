@@ -15,7 +15,7 @@ import requests
 # ---------------------------------------------------------------------------
 
 HF_MODEL_URL = (
-   "https://api-inference.huggingface.co/models/tiiuae/falcon-7b-instruct"
+    "https://api-inference.huggingface.co/models/tiiuae/falcon-7b-instruct"
 )
 MAX_KEYWORDS = 5
 OUTPUT_DIR = pathlib.Path("outputs")
@@ -24,7 +24,6 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
 
 def ask_llm(prompt: str, temperature: float = 0.7) -> str:
     """Send `prompt` to the Inference API and return generated text."""
@@ -47,17 +46,23 @@ def ask_llm(prompt: str, temperature: float = 0.7) -> str:
     res.raise_for_status()
     data = res.json()
 
+    # Güncel Hugging Face API çıktısını kontrol et
+    # 1. outputs -> liste ise
+    if isinstance(data, dict) and "outputs" in data and isinstance(data["outputs"], list):
+        return data["outputs"][0].strip()
+    # 2. generated_text -> direkt string ise
+    if isinstance(data, dict) and "generated_text" in data:
+        return data["generated_text"].strip()
+    # 3. eski format: liste ve ilk elemanında generated_text
     if isinstance(data, list) and data and "generated_text" in data[0]:
         return data[0]["generated_text"].strip()
-
+    # 4. hata
     raise ValueError(f"Unexpected HF API response: {data}")
-
 
 def get_trending_keywords(n: int = MAX_KEYWORDS) -> List[str]:
     """Fetch trending searches for Turkey via *pytrends*. Fallback to static list."""
     try:
         from pytrends.request import TrendReq
-
         pt = TrendReq(hl="en-US", tz=180)
         df = pt.trending_searches(pn="turkey")
         kw_list: List[str] = df[0].tolist()
@@ -69,10 +74,8 @@ def get_trending_keywords(n: int = MAX_KEYWORDS) -> List[str]:
             "open source llm",
             "passive income ideas",
         ]
-
     random.shuffle(kw_list)
     return kw_list[:n]
-
 
 TEMPLATE = (
     "[ROL]={role}\n"
@@ -82,7 +85,6 @@ TEMPLATE = (
     "[KISIT]={constraints}\n"
     "Örnek: {example}\n"
 )
-
 
 def build_prompt(keyword: str) -> Dict[str, str]:
     """Return a dict with title + prompt text for a given keyword."""
@@ -100,11 +102,9 @@ def build_prompt(keyword: str) -> Dict[str, str]:
         "prompt": prompt_text,
     }
 
-
 # ---------------------------------------------------------------------------
 # Main routine
 # ---------------------------------------------------------------------------
-
 
 def main() -> None:
     """Entry-point when script is executed."""
@@ -131,7 +131,6 @@ def main() -> None:
         json.dump(kept, fp, ensure_ascii=False, indent=2)
 
     print(f"Saved {len(kept)} prompts → {outfile}")
-
 
 if __name__ == "__main__":
     main()
