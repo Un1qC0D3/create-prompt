@@ -15,7 +15,7 @@ import requests
 # ---------------------------------------------------------------------------
 
 HF_MODEL_URL = (
-    "https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3-8B-Instruct"
+   "https://api-inference.huggingface.co/models/tiiuae/falcon-7b-instruct"
 )
 MAX_KEYWORDS = 5
 OUTPUT_DIR = pathlib.Path("outputs")
